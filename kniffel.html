@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Multiplayer Kniffel</title>
+
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+  
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+
+  <style>
+    :root { --bg: #121212; --surface: rgba(30, 30, 30, 0.35); --accent: #3b82f6; --accent-hover: #2563eb; --text: #ffffff; --muted: #a0a0a0; --radius: 12px; --preview: #4ade80; }
+    body { background-color: var(--bg); color: var(--text); font-family: 'Segoe UI', sans-serif; max-width: 500px; margin: 0 auto; padding: 20px; padding-bottom: 60px; overflow-x: hidden; transition: background-color 0.3s, color 0.3s; }
+    
+    .header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+    h1 { color: var(--accent); margin: 0; font-size: 24px; text-shadow: 0 2px 4px rgba(0,0,0,0.5); }
+    .room-badge { background: rgba(42, 42, 42, 0.8); padding: 5px 10px; border-radius: 8px; font-size: 12px; color: var(--text); border: 1px solid rgba(255,255,255,0.1); backdrop-filter: blur(5px); }
+
+    .card { background: var(--surface); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); padding: 15px; border-radius: var(--radius); margin-bottom: 20px; box-shadow: 0 8px 16px rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.05); }
+    
+    /* --- 3D WÜRFEL --- */
+    .dice-container { display: flex; justify-content: space-between; margin-bottom: 25px; margin-top: 10px; }
+    .scene { width: 50px; height: 50px; perspective: 600px; }
+    .die-wrapper { transition: transform 0.3s ease, opacity 0.3s ease; cursor: pointer; }
+    .cube { width: 100%; height: 100%; position: relative; transform-style: preserve-3d; transform: translateZ(-25px); }
+    .face { position: absolute; width: 50px; height: 50px; background: linear-gradient(135deg, #ffffff, #e6e6e6); border-radius: 8px; box-shadow: inset 0 0 8px rgba(0,0,0,0.2), 0 0 2px rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; font-size: 44px; color: #111; line-height: 1; backface-visibility: hidden; user-select: none; transition: background 0.3s, color 0.3s, box-shadow 0.3s; }
+    .front  { transform: rotateY(  0deg) translateZ(25px); }
+    .right  { transform: rotateY( 90deg) translateZ(25px); }
+    .back   { transform: rotateY(180deg) translateZ(25px); }
+    .left   { transform: rotateY(-90deg) translateZ(25px); }
+    .top    { transform: rotateX( 90deg) translateZ(25px); }
+    .bottom { transform: rotateX(-90deg) translateZ(25px); }
+    .die-wrapper.held { transform: translateY(15px) scale(0.95); opacity: 0.9; }
+    .die-wrapper.held .face { background: linear-gradient(135deg, var(--accent), #2563eb); color: white; border: 1px solid #fff; box-shadow: 0 0 15px rgba(59, 130, 246, 0.8); }
+    
+    /* --- KNIFFEL GLOW ANIMATION (Repariert) --- */
+    @keyframes kniffel-glow-anim {
+      0% { box-shadow: inset 0 0 8px rgba(0,0,0,0.2), 0 0 10px rgba(250, 204, 21, 0.5); }
+      50% { box-shadow: inset 0 0 8px rgba(0,0,0,0.2), 0 0 25px rgba(250, 204, 21, 1), 0 0 10px rgba(255, 152, 0, 0.8); }
+      100% { box-shadow: inset 0 0 8px rgba(0,0,0,0.2), 0 0 10px rgba(250, 204, 21, 0.5); }
+    }
+    .die-wrapper.is-kniffel .face {
+      animation: kniffel-glow-anim 1.5s infinite ease-in-out;
+      background: linear-gradient(135deg, #fef08a, #facc15) !important;
+      color: #b45309 !important;
+      border: 1px solid #ffffff !important;
+    }
+    
+    .controls { display: flex; gap: 10px; }
+    button { flex: 1; background: var(--accent); color: white; border: none; padding: 12px; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 16px; transition: background 0.2s; box-shadow: 0 4px 6px rgba(0,0,0,0.3);}
+    button:hover { background: var(--accent-hover); }
+    button:disabled { background: rgba(68, 68, 68, 0.8); color: #888; cursor: not-allowed; box-shadow: none; }
+    .btn-secondary { background: rgba(51, 51, 51, 0.8); color: white; }
+
+    /* --- SHAKE ANIMATION --- */
+    @keyframes shake-animation {
+      0% { transform: translate(1px, 1px) rotate(0deg); }
+      10% { transform: translate(-1px, -2px) rotate(-1deg); }
+      20% { transform: translate(-3px, 0px) rotate(1deg); }
+      30% { transform: translate(3px, 2px) rotate(0deg); }
+      40% { transform: translate(1px, -1px) rotate(1deg); }
+      50% { transform: translate(-1px, 2px) rotate(-1deg); }
+      60% { transform: translate(-3px, 1px) rotate(0deg); }
+      70% { transform: translate(3px, 1px) rotate(-1deg); }
+      80% { transform: translate(-1px, -1px) rotate(1deg); }
+      90% { transform: translate(1px, 2px) rotate(0deg); }
+      100% { transform: translate(1px, -2px) rotate(-1deg); }
+    }
+    .shake { animation: shake-animation 0.5s ease-in-out; }
+
+    /* --- SCOREBOARD --- */
+    table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 14px; table-layout: auto; word-wrap: break-word; }
+    th, td { border: 1px solid rgba(255,255,255,0.1); padding: 10px 5px; text-align: center; vertical-align: middle; height: 40px;}
+    th { background: rgba(42, 42, 42, 0.4); position: sticky; top: 0; transition: background 0.3s; backdrop-filter: blur(4px); z-index: 5; }
+    .row-title { text-align: left; font-weight: bold; padding-left: 10px; width: 35%; }
+    .score-cell { cursor: pointer; background: rgba(26, 26, 26, 0.2); transition: background 0.2s; padding: 0; position: relative;} 
+    .score-cell:hover { background: rgba(42, 42, 42, 0.5); }
+    .score-cell.filled { color: var(--accent); font-weight: bold; cursor: default; background: transparent; padding: 10px 5px; font-size: 16px; text-shadow: 0 1px 2px rgba(0,0,0,0.8); }
+    .score-preview { color: var(--preview); opacity: 0.8; font-style: italic; font-weight: bold; text-shadow: 0 1px 2px rgba(0,0,0,0.8); }
+    .sum-row { background: rgba(34, 34, 34, 0.3); font-weight: bold; padding: 10px 5px; }
+    th.active-turn { background: rgba(59, 130, 246, 0.85); color: white; }
+    .active-column { background-color: rgba(59, 130, 246, 0.2); }
+    
+    .inline-input { width: 100%; height: 100%; box-sizing: border-box; background: rgba(42, 42, 42, 0.9); color: #facc15; border: 2px solid #facc15; text-align: center; font-size: 18px; font-weight: bold; outline: none; border-radius: 4px; }
+    
+    .mode-toggle { display: flex; justify-content: space-between; align-items: center; font-size: 14px; margin-bottom: 10px; color: var(--text); }
+    .switch { position: relative; display: inline-block; width: 40px; height: 20px; }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(68, 68, 68, 0.8); transition: .4s; border-radius: 20px; }
+    .slider:before { position: absolute; content: ""; height: 16px; width: 16px; left: 2px; bottom: 2px; background-color: white; transition: .4s; border-radius: 50%; box-shadow: 0 2px 4px rgba(0,0,0,0.3); }
+    input:checked + .slider { background-color: var(--accent); }
+    input:checked + .slider:before { transform: translateX(20px); }
+
+    .highscore-list { list-style: none; padding: 0; margin: 0; }
+    .highscore-list li { display: flex; justify-content: space-between; background: rgba(42, 42, 42, 0.4); padding: 10px; border-radius: 8px; margin-bottom: 5px; border: 1px solid rgba(255,255,255,0.05); }
+    .highscore-score { color: var(--accent); font-weight: bold; }
+
+    .win-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); z-index: 100; display: flex; flex-direction: column; align-items: center; justify-content: center; opacity: 0; pointer-events: none; transition: opacity 0.5s ease; backdrop-filter: blur(10px); }
+    .win-overlay.active { opacity: 1; pointer-events: all; }
+    .trophy { font-size: 80px; animation: bounce 2s infinite; text-shadow: 0 0 30px #facc15; margin-bottom: 20px;}
+    .win-title { font-size: 32px; color: white; margin-bottom: 10px; text-align: center; }
+    .win-subtitle { color: var(--accent); font-size: 20px; font-weight: bold; margin-bottom: 30px; text-align: center; white-space: pre-line; }
+    @keyframes bounce { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-20px); } }
+
+    /* --- SETUP MENU & AVATAR STYLES --- */
+    .setup-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(18, 18, 18, 0.95); z-index: 200; display: flex; align-items: center; justify-content: center; opacity: 0; pointer-events: none; transition: opacity 0.3s; backdrop-filter: blur(8px); }
+    .setup-overlay.active { opacity: 1; pointer-events: all; }
+    .setup-card { background: rgba(30, 30, 30, 0.9); backdrop-filter: blur(15px); padding: 25px; border-radius: var(--radius); width: 90%; max-width: 400px; max-height: 90vh; overflow-y: auto; box-shadow: 0 10px 30px rgba(0,0,0,0.8); border: 1px solid rgba(255,255,255,0.1); }
+    .setup-card h2 { color: var(--accent); margin-top: 0; text-align: center; margin-bottom: 20px; font-size: 24px; }
+    
+    .player-count-selector { display: flex; gap: 10px; margin-bottom: 20px; }
+    .count-btn { flex: 1; padding: 10px; background: rgba(18, 18, 18, 0.8); border: 1px solid rgba(255,255,255,0.1); color: var(--muted); border-radius: 8px; cursor: pointer; transition: all 0.2s; box-shadow: none; font-weight: normal; font-size: 14px;}
+    .count-btn.active { background: rgba(59, 130, 246, 0.3); border-color: var(--accent); color: white; font-weight: bold; box-shadow: 0 0 10px rgba(59, 130, 246, 0.2);}
+
+    .player-setup { margin-bottom: 20px; background: rgba(0, 0, 0, 0.3); padding: 15px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.05); }
+    .player-setup h3 { margin: 0 0 10px 0; font-size: 16px; color: var(--text); }
+    .player-setup input { width: 100%; padding: 12px; box-sizing: border-box; background: rgba(18, 18, 18, 0.8); border: 1px solid rgba(255,255,255,0.1); color: white; border-radius: 8px; font-size: 16px; margin-bottom: 15px; outline: none; transition: border-color 0.2s; }
+    .player-setup input:focus { border-color: var(--accent); }
+    
+    .avatar-selection { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+    .avatar-option { font-size: 28px; cursor: pointer; padding: 8px; border-radius: 8px; border: 2px solid transparent; transition: all 0.2s; background: rgba(26, 26, 26, 0.6); flex: 1 1 calc(33.333% - 8px); min-width: 40px; box-sizing: border-box; text-align: center; user-select: none; }
+    .avatar-option:hover { background: rgba(42, 42, 42, 0.8); }
+    .avatar-option.selected { border-color: var(--accent); background: rgba(59, 130, 246, 0.3); transform: scale(1.1); box-shadow: 0 0 15px rgba(59, 130, 246, 0.4); }
+    
+    .bg-avatar { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 60vh; opacity: 0.3; z-index: -1; pointer-events: none; transition: all 0.5s ease; filter: drop-shadow(0 0 30px rgba(255,255,255,0.1)); }
+    
+    @keyframes avatar-pulse { 0% { transform: scale(1); } 50% { transform: scale(1.35) translateY(-2px); } 100% { transform: scale(1); } }
+    .active-turn .avatar-span { display: inline-block; animation: avatar-pulse 1.5s infinite ease-in-out; filter: drop-shadow(0 0 8px rgba(255,255,255,0.5)); }
+    .avatar-span { display: inline-block; transition: transform 0.3s; }
+
+    /* --- THEME BUTTON --- */
+    .theme-btn { flex: unset; background: transparent; box-shadow: none; border: none; font-size: 24px; padding: 0; margin-right: 15px; cursor: pointer; transition: transform 0.2s; width: auto; color: var(--text); }
+    .theme-btn:hover { background: transparent; transform: scale(1.2); }
+    
+    /* --- WHITE MODE (LIGHT THEME) --- */
+    body.light-mode { --bg: #f3f4f6; --surface: rgba(255, 255, 255, 0.45); --text: #1f2937; --muted: #6b7280; --preview: #15803d; }
+    body.light-mode h1 { text-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+    body.light-mode .room-badge { background: rgba(255, 255, 255, 0.8); border-color: rgba(0,0,0,0.1); }
+    body.light-mode .card { border-color: rgba(0,0,0,0.1); box-shadow: 0 8px 16px rgba(0,0,0,0.05); }
+    
+    body.light-mode .face { background: linear-gradient(135deg, #333333, #111111); color: #ffffff; box-shadow: inset 0 0 8px rgba(255,255,255,0.2), 0 0 4px rgba(0,0,0,0.5); }
+    body.light-mode .die-wrapper.held .face { background: linear-gradient(135deg, var(--accent), #2563eb); border-color: #111; color: white; }
+    
+    body.light-mode th, body.light-mode td { border-color: rgba(0,0,0,0.1); }
+    body.light-mode th { background: rgba(240, 240, 240, 0.5); }
+    body.light-mode .score-cell { background: rgba(255, 255, 255, 0.3); }
+    body.light-mode .score-cell:hover { background: rgba(230, 230, 230, 0.6); }
+    body.light-mode .score-cell.filled, body.light-mode .score-preview { text-shadow: none; }
+    body.light-mode .sum-row { background: rgba(220, 220, 220, 0.4); }
+    body.light-mode th.active-turn { background: rgba(59, 130, 246, 0.85); color: white; }
+    body.light-mode .inline-input { background: rgba(255,255,255,0.9); color: #d97706; border-color: #d97706; }
+    
+    body.light-mode .setup-card { background: rgba(255, 255, 255, 0.95); border-color: rgba(0,0,0,0.1); }
+    body.light-mode .player-setup { background: rgba(0,0,0,0.05); border-color: rgba(0,0,0,0.1); }
+    body.light-mode .player-setup input { background: rgba(255,255,255,0.8); border-color: rgba(0,0,0,0.2); color: #111; }
+    body.light-mode .avatar-option { background: rgba(0,0,0,0.05); }
+    body.light-mode .avatar-option:hover { background: rgba(0,0,0,0.1); }
+    body.light-mode .bg-avatar { filter: drop-shadow(0 0 30px rgba(0,0,0,0.1)); opacity: 0.25; }
+    body.light-mode .highscore-list li { background: rgba(255, 255, 255, 0.4); border-color: rgba(0,0,0,0.05); }
+    body.light-mode .count-btn { background: rgba(255,255,255,0.8); border-color: rgba(0,0,0,0.2); color: #111; }
+    body.light-mode .count-btn.active { background: rgba(59, 130, 246, 0.3); border-color: var(--accent); }
+  </style>
+</head>
+<body>
+
+  <div id="bgAvatar" class="bg-avatar"></div>
+
+  <div class="setup-overlay" id="setupOverlay">
+    <div class="setup-card">
+      <h2>Spieler Setup</h2>
+
+      <div class="player-count-selector">
+        <button class="count-btn" id="btnCount2" onclick="setSetupPlayerCount(2)">2 Spieler</button>
+        <button class="count-btn" id="btnCount3" onclick="setSetupPlayerCount(3)">3 Spieler</button>
+        <button class="count-btn" id="btnCount4" onclick="setSetupPlayerCount(4)">4 Spieler</button>
+      </div>
+      
+      <div class="player-setup" id="setupP1">
+        <h3>Spieler 1</h3>
+        <input type="text" id="setupP1Name" value="Levi" placeholder="Name" maxlength="12">
+        <div class="avatar-selection" id="avatarsP1">
+          <div class="avatar-option selected" onclick="selectAvatar('p1', '🐱')">🐱</div>
+          <div class="avatar-option" onclick="selectAvatar('p1', '🐶')">🐶</div>
+          <div class="avatar-option" onclick="selectAvatar('p1', '🦁')">🦁</div>
+          <div class="avatar-option" onclick="selectAvatar('p1', '🐼')">🐼</div>
+          <div class="avatar-option" onclick="selectAvatar('p1', '🦊')">🦊</div>
+          <div class="avatar-option" onclick="selectAvatar('p1', '🐯')">🐯</div>
+        </div>
+      </div>
+
+      <div class="player-setup" id="setupP2">
+        <h3>Spieler 2</h3>
+        <input type="text" id="setupP2Name" value="Gast" placeholder="Name" maxlength="12">
+        <div class="avatar-selection" id="avatarsP2">
+          <div class="avatar-option" onclick="selectAvatar('p2', '🐱')">🐱</div>
+          <div class="avatar-option selected" onclick="selectAvatar('p2', '🐶')">🐶</div>
+          <div class="avatar-option" onclick="selectAvatar('p2', '🦁')">🦁</div>
+          <div class="avatar-option" onclick="selectAvatar('p2', '🐼')">🐼</div>
+          <div class="avatar-option" onclick="selectAvatar('p2', '🦊')">🦊</div>
+          <div class="avatar-option" onclick="selectAvatar('p2', '🐯')">🐯</div>
+        </div>
+      </div>
+
+      <div class="player-setup" id="setupP3" style="display: none;">
+        <h3>Spieler 3</h3>
+        <input type="text" id="setupP3Name" value="Spieler 3" placeholder="Name" maxlength="12">
+        <div class="avatar-selection" id="avatarsP3">
+          <div class="avatar-option" onclick="selectAvatar('p3', '🐱')">🐱</div>
+          <div class="avatar-option" onclick="selectAvatar('p3', '🐶')">🐶</div>
+          <div class="avatar-option selected" onclick="selectAvatar('p3', '🦁')">🦁</div>
+          <div class="avatar-option" onclick="selectAvatar('p3', '🐼')">🐼</div>
+          <div class="avatar-option" onclick="selectAvatar('p3', '🦊')">🦊</div>
+          <div class="avatar-option" onclick="selectAvatar('p3', '🐯')">🐯</div>
+        </div>
+      </div>
+
+      <div class="player-setup" id="setupP4" style="display: none;">
+        <h3>Spieler 4</h3>
+        <input type="text" id="setupP4Name" value="Spieler 4" placeholder="Name" maxlength="12">
+        <div class="avatar-selection" id="avatarsP4">
+          <div class="avatar-option" onclick="selectAvatar('p4', '🐱')">🐱</div>
+          <div class="avatar-option" onclick="selectAvatar('p4', '🐶')">🐶</div>
+          <div class="avatar-option" onclick="selectAvatar('p4', '🦁')">🦁</div>
+          <div class="avatar-option selected" onclick="selectAvatar('p4', '🐼')">🐼</div>
+          <div class="avatar-option" onclick="selectAvatar('p4', '🦊')">🦊</div>
+          <div class="avatar-option" onclick="selectAvatar('p4', '🐯')">🐯</div>
+        </div>
+      </div>
+
+      <button onclick="submitSetup()" style="width: 100%; margin-top: 10px; background: var(--accent); padding: 15px; font-size: 18px;">Los geht's!</button>
+    </div>
+  </div>
+
+  <div class="header-row">
+    <h1>🎲 Kniffel</h1>
+    <div style="display: flex; align-items: center;">
+      <button id="themeToggleBtn" class="theme-btn" onclick="toggleTheme()">☀️</button>
+      <div class="room-badge" id="roomDisplay">Lokal</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="mode-toggle">
+      <span>Echte Würfel nutzen</span>
+      <label class="switch">
+        <input type="checkbox" id="manualModeToggle" onchange="toggleManualMode()">
+        <span class="slider"></span>
+      </label>
+    </div>
+
+    <div id="virtualDiceArea">
+      <div class="dice-container" id="diceContainer"></div>
+      <div class="controls">
+        <button id="rollBtn" onclick="rollDice()">Würfeln (0/3)</button>
+        <button class="btn-secondary" onclick="resetTurnBtn()">Zug neu starten</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="padding: 10px 5px; overflow-x: auto;">
+    <table>
+      <thead>
+        <tr id="tableHeaderRow">
+          </tr>
+      </thead>
+      <tbody id="scoreTableBody"></tbody>
+    </table>
+    <button onclick="newGame()" style="width: 100%; margin-top: 15px; background: #ef4444;">Neues Spiel starten</button>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top: 0; color: var(--text);">🏆 Globale Top 5</h3>
+    <ul class="highscore-list" id="highscoreList"></ul>
+  </div>
+
+  <div class="win-overlay" id="winOverlay">
+    <div class="trophy">🏆</div>
+    <div class="win-title" id="winTitle"></div>
+    <div class="win-subtitle" id="winSubtitle"></div>
+    <button onclick="closeWinOverlay()" style="width: 200px;">Schließen</button>
+  </div>
+
+  <script>
+    const diceContainer = document.getElementById('diceContainer');
+    for(let i=0; i<5; i++) {
+      diceContainer.innerHTML += `<div class="die-wrapper" onclick="toggleHold(${i})" id="wrapper${i}"><div class="scene"><div class="cube" id="cube${i}"><div class="face front">⚀</div><div class="face bottom">⚁</div><div class="face right">⚂</div><div class="face left">⚃</div><div class="face top">⚄</div><div class="face back">⚅</div></div></div></div>`;
+    }
+
+    const firebaseConfig = { apiKey: "AIzaSyCmiRxVD9uxMBV_6SwQr2_c83ZrfUYHnuA", authDomain: "wg-manager-9637e.firebaseapp.com", databaseURL: "https://wg-manager-9637e-default-rtdb.europe-west1.firebasedatabase.app", projectId: "wg-manager-9637e", storageBucket: "wg-manager-9637e.firebasestorage.app", messagingSenderId: "961103814270", appId: "1:961103814270:web:7936ef5e9c4d200b59822f" };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+
+    const roomId = new URLSearchParams(window.location.search).get('room') || 'local_game';
+    const roomRef = db.ref('kniffel/rooms/' + roomId);
+    const highscoreRef = db.ref('kniffel/highscores');
+    
+    if(roomId !== 'local_game') document.getElementById('roomDisplay').innerText = "Raum: " + roomId;
+
+    let state = { 
+        dice: [1, 2, 3, 4, 5], held: [false, false, false, false, false], rolls: 0, manualMode: false, turn: 'p1', 
+        playerCount: 2,
+        players: { p1: "Levi", p2: "Gast", p3: "Spieler 3", p4: "Spieler 4" }, 
+        avatars: { p1: "🐱", p2: "🐶", p3: "🦁", p4: "🐼" },
+        scores: { p1: {}, p2: {}, p3: {}, p4: {} }, gameEnded: false, setupDone: false 
+    };
+    let editingCell = null, localRolls = undefined;
+    let tempAvatars = { p1: '🐱', p2: '🐶', p3: '🦁', p4: '🐼' };
+    let tempSetupCount = 2;
+
+    function toggleTheme() {
+        document.body.classList.toggle('light-mode');
+        const isLight = document.body.classList.contains('light-mode');
+        document.getElementById('themeToggleBtn').innerText = isLight ? "🌙" : "☀️";
+        localStorage.setItem('kniffel_theme', isLight ? 'light' : 'dark');
+    }
+    
+    if (localStorage.getItem('kniffel_theme') === 'light') {
+        document.body.classList.add('light-mode');
+        document.getElementById('themeToggleBtn').innerText = "🌙";
+    }
+
+    roomRef.on('value', (s) => {
+      if (s.val()) {
+        const oldRolls = state.rolls;
+        state = { ...state, ...s.val() };
+        
+        if (!state.setupDone) { initSetup(); return; }
+        else { document.getElementById('setupOverlay').classList.remove('active'); }
+
+        const isKniffel = state.dice.every(val => val === state.dice[0]);
+        if (isKniffel && state.rolls > 0 && state.rolls !== oldRolls) triggerKniffelEffect();
+
+        if(!state.scores.p1) state.scores.p1 = {}; if(!state.scores.p2) state.scores.p2 = {};
+        if(!state.scores.p3) state.scores.p3 = {}; if(!state.scores.p4) state.scores.p4 = {};
+
+        if(localRolls !== undefined && state.rolls > localRolls) applyDiceRotations(false);
+        else applyDiceRotations(true);
+        localRolls = state.rolls;
+      } else {
+         initSetup();
+      }
+      updateUI(); checkGameEnd();
+    });
+
+    function selectAvatar(player, avatar) {
+        tempAvatars[player] = avatar;
+        document.querySelectorAll(`#avatars${player.toUpperCase()} .avatar-option`).forEach(el => {
+            el.classList.remove('selected');
+            if(el.innerText === avatar) el.classList.add('selected');
+        });
+    }
+
+    function setSetupPlayerCount(count) {
+        tempSetupCount = count;
+        document.getElementById('btnCount2').className = count === 2 ? 'count-btn active' : 'count-btn';
+        document.getElementById('btnCount3').className = count === 3 ? 'count-btn active' : 'count-btn';
+        document.getElementById('btnCount4').className = count === 4 ? 'count-btn active' : 'count-btn';
+        
+        document.getElementById('setupP3').style.display = count >= 3 ? 'block' : 'none';
+        document.getElementById('setupP4').style.display = count >= 4 ? 'block' : 'none';
+    }
+
+    function initSetup() {
+        tempSetupCount = state.playerCount || 2;
+        setSetupPlayerCount(tempSetupCount);
+        
+        document.getElementById('setupP1Name').value = state.players?.p1 || "Levi";
+        document.getElementById('setupP2Name').value = state.players?.p2 || "Gast";
+        document.getElementById('setupP3Name').value = state.players?.p3 || "Spieler 3";
+        document.getElementById('setupP4Name').value = state.players?.p4 || "Spieler 4";
+        
+        selectAvatar('p1', state.avatars?.p1 || '🐱');
+        selectAvatar('p2', state.avatars?.p2 || '🐶');
+        selectAvatar('p3', state.avatars?.p3 || '🦁');
+        selectAvatar('p4', state.avatars?.p4 || '🐼');
+        
+        document.getElementById('setupOverlay').classList.add('active');
+    }
+
+    function submitSetup() {
+        state.playerCount = tempSetupCount;
+        state.players.p1 = document.getElementById('setupP1Name').value.trim() || "Levi";
+        state.players.p2 = document.getElementById('setupP2Name').value.trim() || "Gast";
+        state.players.p3 = document.getElementById('setupP3Name').value.trim() || "Spieler 3";
+        state.players.p4 = document.getElementById('setupP4Name').value.trim() || "Spieler 4";
+        
+        state.avatars.p1 = tempAvatars.p1;
+        state.avatars.p2 = tempAvatars.p2;
+        state.avatars.p3 = tempAvatars.p3;
+        state.avatars.p4 = tempAvatars.p4;
+        
+        state.setupDone = true;
+        document.getElementById('setupOverlay').classList.remove('active');
+        saveState();
+    }
+
+    function triggerKniffelEffect() {
+        document.querySelector('body').classList.add('shake');
+        setTimeout(() => document.querySelector('body').classList.remove('shake'), 500);
+
+        if (typeof confetti === 'function') {
+            var duration = 3 * 1000;
+            var animationEnd = Date.now() + duration;
+            var defaults = { startVelocity: 30, spread: 360, ticks: 60, zIndex: 1000 };
+
+            function randomInRange(min, max) { return Math.random() * (max - min) + min; }
+
+            var interval = setInterval(function() {
+                var timeLeft = animationEnd - Date.now();
+                if (timeLeft <= 0) { return clearInterval(interval); }
+                var particleCount = 50 * (timeLeft / duration);
+                
+                confetti(Object.assign({}, defaults, { particleCount, origin: { x: randomInRange(0.1, 0.3), y: Math.random() - 0.2 } }));
+                confetti(Object.assign({}, defaults, { particleCount, origin: { x: randomInRange(0.7, 0.9), y: Math.random() - 0.2 } }));
+            }, 250);
+        }
+    }
+
+    highscoreRef.orderByChild("score").limitToLast(5).on('value', (s) => {
+      let list = []; s.forEach(c => { list.push(c.val()); }); list.reverse();
+      const ul = document.getElementById('highscoreList'); ul.innerHTML = "";
+      list.forEach((e, i) => { ul.innerHTML += `<li><span>${i==0?"🥇":i==1?"🥈":"🥉"} ${e.name}</span> <span class="highscore-score">${e.score}</span></li>`; });
+    });
+
+    function saveState() { roomRef.set(state); }
+    const faceRotations = { 1: {x:0,y:0}, 2: {x:90,y:0}, 3: {x:0,y:-90}, 4: {x:0,y:90}, 5: {x:-90,y:0}, 6: {x:0,y:180} };
+    let currentRotations = [ {x:0,y:0}, {x:0,y:0}, {x:0,y:0}, {x:0,y:0}, {x:0,y:0} ];
+    
+    function applyDiceRotations(forceSnap) {
+      for(let i=0; i<5; i++) {
+        let t = faceRotations[state.dice[i]], cube = document.getElementById('cube' + i);
+        if (forceSnap || state.held[i]) { currentRotations[i] = { x: t.x, y: t.y }; cube.style.transition = 'none'; } 
+        else {
+          currentRotations[i].x = t.x + (Math.floor(currentRotations[i].x/360)*360) + ((Math.random()>0.5?2:-2)*360);
+          currentRotations[i].y = t.y + (Math.floor(currentRotations[i].y/360)*360) + ((Math.random()>0.5?2:-2)*360);
+          cube.style.transition = `transform ${0.7+Math.random()*0.4}s cubic-bezier(0.2, 0.8, 0.2, 1)`;
+        }
+        void cube.offsetWidth; cube.style.transform = `rotateX(${currentRotations[i].x}deg) rotateY(${currentRotations[i].y}deg)`;
+      }
+    }
+
+    function rollDice() { if (state.rolls >= 3) return; const a = new Uint32Array(5); window.crypto.getRandomValues(a); for (let i = 0; i < 5; i++) { if (!state.held[i]) state.dice[i] = (a[i] % 6) + 1; } state.rolls++; saveState(); }
+    function toggleHold(i) { if (state.rolls === 0) return; state.held[i] = !state.held[i]; saveState(); }
+    function resetTurn() { state.held = [false, false, false, false, false]; state.rolls = 0; saveState(); }
+    function resetTurnBtn() { if(confirm("Zug neu starten?")) resetTurn(); }
+    function toggleManualMode() { state.manualMode = document.getElementById('manualModeToggle').checked; saveState(); }
+
+    function getPoints(catId) {
+      if (state.rolls === 0) return 0;
+      let c = [0,0,0,0,0,0,0], sum = 0; state.dice.forEach(d => { c[d]++; sum += d; });
+      const unique = [...new Set(state.dice)].sort((a,b)=>a-b).join('');
+      const isK = c.some(x => x === 5);
+      if (isK && state.scores[state.turn]?.kniffel === 50) return 50;
+      switch(catId) {
+        case "ones": return c[1]*1; case "twos": return c[2]*2; case "threes": return c[3]*3;
+        case "fours": return c[4]*4; case "fives": return c[5]*5; case "sixes": return c[6]*6;
+        case "threeKind": return c.some(x => x >= 3) ? sum : 0; case "fourKind": return c.some(x => x >= 4) ? sum : 0;
+        case "fullHouse": return (c.includes(3) && c.includes(2)) || isK ? 25 : 0;
+        case "smallStr": return unique.includes('1234')||unique.includes('2345')||unique.includes('3456')||isK ? 30 : 0;
+        case "largeStr": return unique==='12345'||unique==='23456'||isK ? 40 : 0;
+        case "kniffel": return isK ? 50 : 0; case "chance": return sum; default: return 0;
+      }
+    }
+
+    function getActivePlayers() {
+        return ['p1', 'p2', 'p3', 'p4'].slice(0, state.playerCount || 2);
+    }
+
+    function nextTurn() {
+        const activePlayers = getActivePlayers();
+        let currentIndex = activePlayers.indexOf(state.turn);
+        if (currentIndex === -1) currentIndex = 0;
+        state.turn = activePlayers[(currentIndex + 1) % activePlayers.length];
+        resetTurn();
+    }
+
+    function updateUI() {
+      document.getElementById('manualModeToggle').checked = state.manualMode;
+      document.getElementById('virtualDiceArea').style.display = state.manualMode ? 'none' : 'block';
+      
+      const isKniffel = state.rolls > 0 && state.dice.every(val => val === state.dice[0]);
+
+      for (let i = 0; i < 5; i++) {
+        let wrapper = document.getElementById('wrapper' + i);
+        wrapper.className = `die-wrapper ${state.held[i] ? 'held' : ''} ${isKniffel ? 'is-kniffel' : ''}`;
+      }
+      
+      document.getElementById('rollBtn').innerText = `Würfeln (${state.rolls}/3)`;
+      document.getElementById('rollBtn').disabled = state.rolls >= 3;
+      renderTable();
+    }
+
+    function renderTable() {
+      const activePlayers = getActivePlayers();
+      
+      const headerRow = document.getElementById('tableHeaderRow');
+      headerRow.innerHTML = `<th>Kategorie</th>`;
+      activePlayers.forEach(p => {
+         const th = document.createElement('th');
+         th.id = `${p}Name`;
+         th.onclick = () => renamePlayer(p);
+         th.innerHTML = `<span class="avatar-span">${state.avatars[p]}</span> ${state.players[p]}` + (state.turn === p ? " 🎲" : " ✏️");
+         th.className = state.turn === p ? "active-turn" : "";
+         headerRow.appendChild(th);
+      });
+
+      const tbody = document.getElementById('scoreTableBody'); tbody.innerHTML = '';
+      const cats = [{id:"ones",n:"Einser"},{id:"twos",n:"Zweier"},{id:"threes",n:"Dreier"},{id:"fours",n:"Vierer"},{id:"fives",n:"Fünfer"},{id:"sixes",n:"Sechser"},{id:"sumTop",n:"Summe Oben",sum:1},{id:"bonus",n:"Bonus",sum:1},{id:"threeKind",n:"3er Pasch"},{id:"fourKind",n:"4er Pasch"},{id:"fullHouse",n:"Full House"},{id:"smallStr",n:"Kl. Straße"},{id:"largeStr",n:"Gr. Straße"},{id:"kniffel",n:"Kniffel"},{id:"chance",n:"Chance"},{id:"total",n:"GESAMT",sum:1}];
+      
+      document.getElementById('bgAvatar').innerText = state.avatars[state.turn] || '';
+
+      cats.forEach(cat => {
+        const tr = document.createElement('tr'); if (cat.sum) tr.className = 'sum-row';
+        tr.innerHTML = `<td class="row-title">${cat.n}</td>`;
+        
+        activePlayers.forEach(p => {
+          const val = state.scores[p][cat.id];
+          const isTurn = (p === state.turn);
+          const td = document.createElement('td');
+          if (isTurn) td.className = 'active-column';
+
+          if (cat.sum) td.innerText = calcSum(p)[cat.id]||0;
+          else if (editingCell === `${p}-${cat.id}`) {
+            td.innerHTML = `<input type="number" class="inline-input" id="inlineEditInput" value="${state.manualMode?'':getPoints(cat.id)}" onblur="finishEdit('${p}','${cat.id}')">`;
+            setTimeout(() => { const i = document.getElementById('inlineEditInput'); if(i) i.focus(); }, 10);
+          } else if (val !== undefined) td.innerText = val, td.className += ' score-cell filled';
+          else {
+            let pnts = (isTurn && !state.manualMode && state.rolls > 0) ? getPoints(cat.id) : "";
+            td.innerHTML = pnts !== "" ? `<span class="score-preview">${pnts}</span>` : "";
+            td.onclick = () => cellClick(p, cat.id);
+            td.className += ' score-cell';
+          }
+          tr.appendChild(td);
+        });
+        tbody.appendChild(tr);
+      });
+    }
+
+    function cellClick(p, catId) { 
+        if(p !== state.turn) return; 
+        if (!state.manualMode) { 
+            state.scores[p][catId] = getPoints(catId); 
+            nextTurn(); 
+        } else { 
+            editingCell = `${p}-${catId}`; 
+            renderTable(); 
+        } 
+    }
+    
+    function finishEdit(p, catId) { 
+        const v = document.getElementById('inlineEditInput').value; 
+        editingCell = null; 
+        if (v !== "") {
+            state.scores[p][catId] = parseInt(v); 
+            nextTurn(); 
+        } else {
+            renderTable();
+        }
+    }
+    
+    function calcSum(p) { const s = state.scores[p] || {}; let t = (s.ones||0)+(s.twos||0)+(s.threes||0)+(s.fours||0)+(s.fives||0)+(s.sixes||0), b = (s.threeKind||0)+(s.fourKind||0)+(s.fullHouse||0)+(s.smallStr||0)+(s.largeStr||0)+(s.kniffel||0)+(s.chance||0); return { sumTop: t, bonus: t>=63?35:0, total: t + (t>=63?35:0) + b }; }
+    
+    function checkGameEnd() { 
+        if (state.gameEnded) return; 
+        const activePlayers = getActivePlayers();
+        const allFinished = activePlayers.every(p => Object.keys(state.scores[p]).length >= 13);
+        
+        if (allFinished) { 
+            state.gameEnded = true; 
+            saveState(); 
+            
+            let results = activePlayers.map(p => ({ name: state.players[p], score: calcSum(p).total }));
+            results.sort((a,b) => b.score - a.score);
+            
+            let winner = results[0];
+            let isDraw = results.length > 1 && results[0].score === results[1].score;
+            
+            document.getElementById('winTitle').innerText = isDraw ? "Unentschieden!" : `${winner.name} gewinnt!`; 
+            document.getElementById('winSubtitle').innerText = `${winner.score} Punkte`; 
+            if(results.length > 1 && !isDraw) {
+                document.getElementById('winSubtitle').innerText += `\n(2. Platz: ${results[1].score})`;
+            }
+            
+            document.getElementById('winOverlay').classList.add('active'); 
+            
+            triggerKniffelEffect();
+            
+            highscoreRef.push({ name: winner.name, score: winner.score, room: roomId }); 
+        } 
+    }
+    
+    function closeWinOverlay() { document.getElementById('winOverlay').classList.remove('active'); }
+    
+    function newGame() { 
+      if(confirm("Neues Spiel starten?")) { 
+        state.scores = { p1: {}, p2: {}, p3: {}, p4: {} }; 
+        state.turn = 'p1'; 
+        state.gameEnded = false; 
+        state.setupDone = false; 
+        resetTurn(); 
+      } 
+    }
+    
+    function renamePlayer(p) { 
+      initSetup(); 
+    }
+  </script>
+</body>
+</html>
