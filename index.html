@@ -5,11 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Multiplayer Kniffel</title>
 
-  <!-- Firebase -->
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
   
-  <!-- Confetti Effekt -->
   <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
 
   <style>
@@ -17,11 +15,6 @@
     body { background-color: var(--bg); color: var(--text); font-family: 'Segoe UI', sans-serif; max-width: 500px; margin: 0 auto; padding: 20px; padding-bottom: 60px; overflow-x: hidden; transition: background-color 0.3s, color 0.3s; }
     
     .header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
-    
-    /* --- NEUER ZURÜCK BUTTON --- */
-    .back-btn { background: rgba(42, 42, 42, 0.8); padding: 8px 12px; border-radius: 8px; color: var(--text); text-decoration: none; font-size: 14px; font-weight: bold; border: 1px solid rgba(255,255,255,0.1); backdrop-filter: blur(5px); transition: all 0.2s; display: flex; align-items: center; }
-    .back-btn:hover { background: rgba(59, 130, 246, 0.5); border-color: var(--accent); }
-    
     h1 { color: var(--accent); margin: 0; font-size: 24px; text-shadow: 0 2px 4px rgba(0,0,0,0.5); }
     .room-badge { background: rgba(42, 42, 42, 0.8); padding: 5px 10px; border-radius: 8px; font-size: 12px; color: var(--text); border: 1px solid rgba(255,255,255,0.1); backdrop-filter: blur(5px); }
 
@@ -42,7 +35,7 @@
     .die-wrapper.held { transform: translateY(15px) scale(0.95); opacity: 0.9; }
     .die-wrapper.held .face { background: linear-gradient(135deg, var(--accent), #2563eb); color: white; border: 1px solid #fff; box-shadow: 0 0 15px rgba(59, 130, 246, 0.8); }
     
-    /* --- KNIFFEL GLOW ANIMATION --- */
+    /* --- KNIFFEL GLOW ANIMATION (Repariert) --- */
     @keyframes kniffel-glow-anim {
       0% { box-shadow: inset 0 0 8px rgba(0,0,0,0.2), 0 0 10px rgba(250, 204, 21, 0.5); }
       50% { box-shadow: inset 0 0 8px rgba(0,0,0,0.2), 0 0 25px rgba(250, 204, 21, 1), 0 0 10px rgba(255, 152, 0, 0.8); }
@@ -168,7 +161,6 @@
     body.light-mode .highscore-list li { background: rgba(255, 255, 255, 0.4); border-color: rgba(0,0,0,0.05); }
     body.light-mode .count-btn { background: rgba(255,255,255,0.8); border-color: rgba(0,0,0,0.2); color: #111; }
     body.light-mode .count-btn.active { background: rgba(59, 130, 246, 0.3); border-color: var(--accent); }
-    body.light-mode .back-btn { background: rgba(255, 255, 255, 0.8); border-color: rgba(0,0,0,0.1); color: #111; }
   </style>
 </head>
 <body>
@@ -242,10 +234,7 @@
   </div>
 
   <div class="header-row">
-    <div style="display: flex; align-items: center; gap: 10px;">
-      <a href="index.html" class="back-btn">⬅️ Zurück</a>
-      <h1>🎲 Kniffel</h1>
-    </div>
+    <h1>🎲 Kniffel</h1>
     <div style="display: flex; align-items: center;">
       <button id="themeToggleBtn" class="theme-btn" onclick="toggleTheme()">☀️</button>
       <div class="room-badge" id="roomDisplay">Lokal</div>
@@ -274,8 +263,7 @@
     <table>
       <thead>
         <tr id="tableHeaderRow">
-          <!-- Wird dynamisch durch JS befüllt -->
-        </tr>
+          </tr>
       </thead>
       <tbody id="scoreTableBody"></tbody>
     </table>
